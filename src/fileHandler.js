@@ -48,10 +48,8 @@ async function handleStaticFiles(absolutePath, req, res, next) {
   const requestedPath = decodeURIComponent(req.path);
   const fullPath = path.join(absolutePath, requestedPath);
 
-  console.log('Requested path:', requestedPath, 'Full path:', fullPath);
   try {
     const stats = fs.statSync(fullPath);
-    console.log('Stats:', stats);
     
     if (stats.isDirectory()) {
       next();
@@ -80,7 +78,6 @@ async function handleStaticFiles(absolutePath, req, res, next) {
         
         res.json(deovrResponse);
       } else {
-        console.log('Not a DeoVR browser, serving file:', fullPath);
         res.sendFile(fullPath);
       }
     }

@@ -1,0 +1,49 @@
+# Source control
+.git
+.gitignore
+
+# Development files
+test/
+tests/
+__tests__/
+*.test.js
+*.spec.js
+coverage/
+
+# Configuration files
+.eslintrc*
+.prettierrc*
+.editorconfig
+.vscode/
+.idea/
+*.config.js
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Build and temp files
+dist/
+build/
+tmp/
+temp/
+
+# Environment files
+.env*
+*.env
+
+# Logs
+logs/
+*.log
+
+# Dependencies
+node_modules/
+
+# Debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# testing folders
+server-test/

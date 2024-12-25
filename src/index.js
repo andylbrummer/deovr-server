@@ -58,7 +58,6 @@ program
       }
     });
 
-    console.log('Serving directory:', absolutePath);
     app.use(handleStaticFiles.bind(null, absolutePath));
     
     app.get('/:path(*)', (req, res) => {

@@ -1,10 +1,10 @@
 {
-  "name": "deovr-list",
+  "name": "deovr-server",
   "version": "1.0.0",
-  "description": "A folder browser web app",
+  "description": "A folder browser web app with support for deovr next and back in videos",
   "main": "src/index.js",
   "bin": {
-    "deovr-server": "./src/index.js"
+    "deovr-server": "src/index.js"
   },
   "scripts": {
     "dev": "nodemon src/index.js server-test",

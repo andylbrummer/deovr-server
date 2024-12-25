@@ -11,7 +11,7 @@
 Install globally to use the CLI:
 
 
-npm install -g @andybrummer/deovr-server
+npm install -g deovr-server
 
 
 ## CLI Options

@@ -1,0 +1,31 @@
+{
+  "name": "deovr-list",
+  "version": "1.0.0",
+  "description": "A folder browser web app",
+  "main": "src/index.js",
+  "bin": {
+    "deovr-list": "./src/index.js"
+  },
+  "scripts": {
+    "dev": "nodemon src/index.js server-test",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "commander": "^8.3.0",
+    "ejs": "^3.1.10",
+    "express": "^4.17.1",
+    "ffprobe": "^1.1.2",
+    "ffprobe-static": "^3.1.0",
+    "serve-favicon": "^2.5.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.9",
+    "supertest": "^6.3.4"
+  }
+}

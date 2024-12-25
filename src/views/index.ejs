@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>File Browser</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .item {
+            padding: 5px;
+        }
+        .item a {
+            text-decoration: none;
+            cursor: pointer;
+            display: block;
+        }
+        .folder {
+            color: #2c3e50;
+            font-weight: bold;
+        }
+        .file {
+            color: #34495e;
+        }
+        .breadcrumb {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="breadcrumb" id="breadcrumb"></div>
+    <div id="fileList"></div>
+
+    <script>
+        let currentPath = '<%- currentPath %>';
+
+        function updateBreadcrumb() {
+            const parts = currentPath.split('/').filter(p => p);
+            let html = '<a href="/">Home</a>';
+            let buildPath = '';
+            
+            parts.forEach(part => {
+                buildPath += '/' + part;
+                html += ` > <a href="${buildPath}">${part}</a>`;
+            });
+            
+            document.getElementById('breadcrumb').innerHTML = html;
+        }
+
+        window.addEventListener('load', () => {
+            updateBreadcrumb();
+            
+            const fileList = document.getElementById('fileList');
+            /* eslint-disable */
+            const items = <%- JSON.stringify(items) %>;
+            /* eslint-enable */            
+            items.sort((a, b) => {
+                if (a.isDirectory === b.isDirectory) {
+                    return a.name.localeCompare(b.name);
+                }
+                return b.isDirectory - a.isDirectory;
+            }).forEach(item => {
+                const div = document.createElement('div');
+                div.className = `item ${item.isDirectory ? 'folder' : 'file'}`;
+                
+                const link = document.createElement('a');
+                link.href = `/${item.path}`;
+                const icon = item.isDirectory ? '📁' : '📄';
+                link.innerHTML = `${icon} ${item.name}`;
+                
+                div.appendChild(link);
+                fileList.appendChild(div);
+            });
+        });
+    </script>
+</body>
+</html>

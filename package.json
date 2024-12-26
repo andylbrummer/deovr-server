@@ -1,6 +1,6 @@
 {
   "name": "deovr-server",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A folder browser web app with support for deovr next and back in videos",
   "main": "src/index.js",
   "bin": {

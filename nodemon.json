@@ -2,5 +2,5 @@
   "watch": ["src/"],
   "ext": "js,json,html,css",
   "ignore": ["node_modules/"],
-  "exec": "node src/index.js server-test"
+  "exec": "node src/index.js -p 8080 g:"
 }

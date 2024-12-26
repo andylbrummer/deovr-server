@@ -60,16 +60,36 @@
                 }
                 return b.isDirectory - a.isDirectory;
             }).forEach(item => {
-                const div = document.createElement('div');
-                div.className = `item ${item.isDirectory ? 'folder' : 'file'}`;
-                
-                const link = document.createElement('a');
-                link.href = `/${item.path}`;
-                const icon = item.isDirectory ? '📁' : '📄';
-                link.innerHTML = `${icon} ${item.name}`;
-                
-                div.appendChild(link);
-                fileList.appendChild(div);
+                if (item.isDirectory) {
+                    const div = document.createElement('div');
+                    div.className = `item ${item.isDirectory ? 'folder' : 'file'}`;
+                    
+                    const link = document.createElement('a');
+                    link.href = `/${item.path}`;
+                    const icon = item.isDirectory ? '📁' : '📄';
+                    link.innerHTML = `${icon} ${item.name}`;
+                    
+                    div.appendChild(link);
+                    fileList.appendChild(div);
+                } else {
+                    const div = document.createElement('div');
+                    div.className = `item ${item.isDirectory ? 'folder' : 'file'}`;
+                    
+                    const link = document.createElement('a');
+                    link.href = `/${item.path}`;
+                    const icon = item.isDirectory ? '📁' : '📄';
+                    link.innerHTML = `${icon} ${item.name}`;
+                    
+                    div.appendChild(link);
+
+                    const link2 = document.createElement('a');
+                    link2.href = `/${item.path}?json=true`;
+                    const icon2 = item.isDirectory ? '📁' : '📄';
+                    link2.innerHTML = `${icon} dovr-${item.name}`;
+                    
+                    div.appendChild(link2);
+                    fileList.appendChild(div);
+                }
             });
         });
     </script>

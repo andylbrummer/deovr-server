@@ -81,7 +81,11 @@ program
           currentPath: req.path
         });
       } catch (error) {
-        res.status(500).render('error', { error: error.message });
+        res.status(500).render('error', { 
+          title: 'server error', 
+          error: error,
+          message: 'An error occurred while processing your request'
+         });
       }
     });
     try {

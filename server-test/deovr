@@ -1,0 +1,27 @@
+{
+  "scenes":[
+    {
+      "name":"Library",
+      "list":[
+        {
+          "title":"Play with a pretty dog",
+          "videoLength":79,
+          "thumbnailUrl":"https://deovr.com/s/images/feed/thumb1.png",
+          "video_url":"https://deovr.com/deovr/video/id/1"
+        },
+        {
+          "title":"Bikini car wash",
+          "videoLength":242,
+          "thumbnailUrl":"https://deovr.com/s/images/feed/thumb2.png",
+          "video_url":"https://deovr.com/deovr/video/id/2"
+        },
+        {
+          "title":"Date with a girl",
+          "videoLength":401,
+          "thumbnailUrl":"https:\/\/deovr.com\/s\/images\/feed\/thumb3.png",
+          "video_url":"https://deovr.com/deovr/video/id/2"
+        }
+      ]
+    }
+  ]
+}

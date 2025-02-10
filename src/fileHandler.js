@@ -29,7 +29,7 @@ async function getVideoMetadata(filePath) {
 
 function getAdjacentVideos(dirPath, currentFile) {
   const files = fs.readdirSync(dirPath)
-    .filter(file => ['.mp4', '.m4v', '.webm'].includes(path.extname(file)));
+    .filter(file => ['.mp4', '.m4v', '.webm'].includes(path.extname(file).toLowerCase()));
 
   const currentIndex = files.indexOf(currentFile);
   return {
@@ -40,16 +40,38 @@ function getAdjacentVideos(dirPath, currentFile) {
 
 function isDeoVRBrowser(userAgent) {
   return userAgent && (
-    userAgent.includes('Deo VR') ||
-    userAgent.includes('Deo VR') ||
-    userAgent.includes('deo vr')
+    userAgent.toLowerCase().includes('deo vr')
   );
 }
 
 function isDeoVRPlayer(userAgent) {
   return userAgent && (
-    userAgent.includes('AVProMobileVideo') || userAgent.includes('ExoPlayerLib')
+    userAgent.toLowerCase().includes('avpromobilevideo') || 
+    userAgent.toLowerCase().includes('exoplayerlib')
   );
+}
+
+async function moveFileToRemove(filePath, absolutePath) {
+  const removePath = path.join(path.dirname(filePath), 'remove');
+  const fileName = path.basename(filePath);
+  const targetPath = path.join(removePath, fileName);
+
+  // Create remove directory if it doesn't exist
+  if (!fs.existsSync(removePath)) {
+    fs.mkdirSync(removePath, { recursive: true });
+  }
+
+  // Move the file
+  fs.renameSync(filePath, targetPath);
+}
+
+async function restoreFileFromRemove(filePath, absolutePath) {
+  const parentPath = path.dirname(path.dirname(filePath)); // go up two levels: from remove/file.mp4 to get the parent
+  const fileName = path.basename(filePath);
+  const targetPath = path.join(parentPath, fileName);
+
+  // Move the file back to parent directory
+  fs.renameSync(filePath, targetPath);
 }
 
 async function handleStaticFiles(absolutePath, req, res, next) {
@@ -59,47 +81,49 @@ async function handleStaticFiles(absolutePath, req, res, next) {
   console.log(requestedPath.split('/').map(x => encodeURIComponent(x)).join('/'));
 
   try {
-    const stats = fs.statSync(fullPath);
+    if (req.query.json) {
+      const fileFullPath = fullPath.replace(/\.json$/, '');;
+      const stats = fs.statSync(fileFullPath);
 
-    if (stats.isDirectory()) {
-      next();
-    } else {
-      if (req.query.json) {
-        const videoMetadata = await getVideoMetadata(fullPath);
-        const dirPath = path.dirname(fullPath);
-        const { previous, next } = getAdjacentVideos(dirPath, path.basename(fullPath));
+      const videoMetadata = await getVideoMetadata(fileFullPath);
+      const dirPath = path.dirname(fileFullPath);
+      const { previous, next } = getAdjacentVideos(dirPath, path.basename(fileFullPath));
 
-        const deovrResponse = {
-          title: path.basename(fullPath, path.extname(fullPath)),
-          id: requestedPath,
-          encodings: [{
-            name: "h264",
-            videoSources: [{
-              resolution: videoMetadata.width,
-              url: requestedPath.split('/').map(x => encodeURIComponent(x)).join('/'),
-            }],
+      const deovrResponse = {
+        title: path.basename(fullPath, path.extname(fileFullPath)),
+        id: requestedPath,
+        encodings: [{
+          name: "h264",
+          videoSources: [{
+            resolution: videoMetadata.width,
+            url: requestedPath.split('/').map(x => encodeURIComponent(x)).join('/'),
           }],
-          is3d: true,
-          // videoMetadata: {
-          //   format: videoMetadata.fileType,
-          //   resolution: videoMetadata.resolution,
-          //   duration: videoMetadata.duration,
-          //   bitrate: videoMetadata.bitrate,
-          //   codec: videoMetadata.codec,
-          //   fps: videoMetadata.fps
-          // },
-          navigation: {
-            previousVideo: previous ? `${previous}` : null,
-            nextVideo: next ? `${next}` : null
-          }
-        };
-        console.log(deovrResponse);
+        }],
+        is3d: true,
+        // videoMetadata: {
+        //   format: videoMetadata.fileType,
+        //   resolution: videoMetadata.resolution,
+        //   duration: videoMetadata.duration,
+        //   bitrate: videoMetadata.bitrate,
+        //   codec: videoMetadata.codec,
+        //   fps: videoMetadata.fps
+        // },
+        navigation: {
+          previousVideo: previous ? `${previous}` : null,
+          nextVideo: next ? `${next}` : null
+        }
+      };
+      console.log(deovrResponse);
 
-        res.json(deovrResponse);
+      res.json(deovrResponse);
+    } else {
+      const stats = fs.statSync(fullPath);
+      if (stats.isDirectory()) {
+        next();
       } else {
         res.sendFile(fullPath);
       }
-    }
+    } 
   } catch (error) {
     if (error.code === 'ENOENT') {
       return res.status(404).render('error', {
@@ -116,4 +140,9 @@ async function handleStaticFiles(absolutePath, req, res, next) {
   }
 }
 
-module.exports = handleStaticFiles;
+module.exports = {
+    handleStaticFiles,
+    getVideoMetadata,
+    moveFileToRemove,
+    restoreFileFromRemove
+};

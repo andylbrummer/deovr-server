@@ -6,33 +6,117 @@
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
+            background-color: #f5f5f5;
         }
         .item {
-            padding: 5px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin: 10px;
+            padding: 15px;
+            display: inline-block;
+            width: 250px;
+            vertical-align: top;
+            position: relative;
         }
         .item a {
             text-decoration: none;
             cursor: pointer;
-            display: block;
+            color: #2c3e50;
         }
         .folder {
-            color: #2c3e50;
-            font-weight: bold;
+            background: #e3f2fd;
         }
         .file {
-            color: #34495e;
+            background: white;
         }
         .breadcrumb {
             margin-bottom: 20px;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+        }
+        .metadata {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        .file-name {
+            font-weight: bold;
+            margin-bottom: 8px;
+            word-break: break-word;
+        }
+        .button-bar {
+            margin: 20px 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .sort-button {
+            background: #2c3e50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+        .sort-button:hover {
+            background: #34495e;
+        }
+        .sort-button.active {
+            background: #16a085;
+        }
+        .delete-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #e74c3c;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+        }
+        .restore-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #27ae60;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
         }
     </style>
 </head>
 <body>
+    <div><a href="https://deovr.com/deovr/video/id/52212">Japan stroll</a></div>
     <div class="breadcrumb" id="breadcrumb"></div>
-    <div id="fileList"></div>
+    <div class="button-bar">
+        <button class="sort-button active" data-sort="name">Sort by Name</button>
+        <button class="sort-button" data-sort="size">Sort by Size</button>
+        <button class="sort-button" data-sort="random">Random</button>
+    </div>
+    <%
+    const itemsJson = JSON.stringify(items || []).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    %>
+    <div id="fileList" data-items='<%- JSON.stringify(items || []) %>'></div>
 
     <script>
         let currentPath = '<%- currentPath %>';
+        let currentItems = JSON.parse(document.getElementById('fileList').dataset.items);
+        let currentSort = 'name';
 
         function updateBreadcrumb() {
             const parts = currentPath.split('/').filter(p => p);
@@ -47,49 +131,160 @@
             document.getElementById('breadcrumb').innerHTML = html;
         }
 
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds) return '';
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${hrs > 0 ? hrs + ':' : ''}${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function sortItems(items, sortType) {
+            const folderItems = items.filter(item => item.isDirectory);
+            const fileItems = items.filter(item => !item.isDirectory);
+            
+            switch(sortType) {
+                case 'size':
+                    fileItems.sort((a, b) => (b.stats?.size || 0) - (a.stats?.size || 0));
+                    break;
+                case 'random':
+                    for (let i = fileItems.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [fileItems[i], fileItems[j]] = [fileItems[j], fileItems[i]];
+                    }
+                    break;
+                default: // name
+                    fileItems.sort((a, b) => a.name.localeCompare(b.name));
+            }
+            
+            // Folders always sorted by name at the top
+            folderItems.sort((a, b) => a.name.localeCompare(b.name));
+            return [...folderItems, ...fileItems];
+        }
+
+        async function deleteFile(filePath, itemElement) {
+            if (!confirm('Are you sure you want to move this file to the remove folder?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/remove-file?path=${encodeURIComponent(filePath)}`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    itemElement.remove();
+                } else {
+                    const error = await response.json();
+                    alert('Error moving file: ' + (error.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error moving file: ' + error.message);
+            }
+        }
+
+        async function restoreFile(filePath, itemElement) {
+            if (!confirm('Are you sure you want to restore this file to the parent folder?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/restore-file?path=${encodeURIComponent(filePath)}`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    itemElement.remove();
+                } else {
+                    const error = await response.json();
+                    alert('Error restoring file: ' + (error.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error restoring file: ' + error.message);
+            }
+        }
+
+        function renderItems(items) {
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = '';
+            
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = `item ${item.isDirectory ? 'folder' : 'file'}`;
+                
+                const link = document.createElement('a');
+                link.href = `/${item.path}`;
+                const icon = item.isDirectory ? '📁' : '📄';
+                
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'file-name';
+                nameDiv.innerHTML = `${icon} ${item.name}`;
+                link.appendChild(nameDiv);
+
+                if (!item.isDirectory && item.actions && item.actions.length > 0) {
+                    const action = item.actions[0];
+                    const button = document.createElement('button');
+                    if (action.type === 'restore') {
+                        button.className = 'restore-button';
+                        button.innerHTML = '↩️';
+                        button.onclick = (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            restoreFile(action.path, div);
+                        };
+                    } else {
+                        button.className = 'delete-button';
+                        button.innerHTML = '🗑️';
+                        button.onclick = (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            deleteFile(action.path, div);
+                        };
+                    }
+                    div.appendChild(button);
+                }
+
+                if (!item.isDirectory && item.stats) {
+                    const metadataDiv = document.createElement('div');
+                    metadataDiv.className = 'metadata';
+                    metadataDiv.innerHTML = `
+                        Size: ${formatFileSize(item.stats.size)}<br>
+                        Modified: ${new Date(item.stats.mtime).toLocaleDateString()}<br>
+                        ${item.duration ? 'Duration: ' + formatDuration(item.duration) : ''}
+                    `;
+                    link.appendChild(metadataDiv);
+                }
+                
+                div.appendChild(link);
+                fileList.appendChild(div);
+            });
+        }
+
         window.addEventListener('load', () => {
             updateBreadcrumb();
             
-            const fileList = document.getElementById('fileList');
-            /* eslint-disable */
-            const items = <%- JSON.stringify(items) %>;
-            /* eslint-enable */            
-            items.sort((a, b) => {
-                if (a.isDirectory === b.isDirectory) {
-                    return a.name.localeCompare(b.name);
-                }
-                return b.isDirectory - a.isDirectory;
-            }).forEach(item => {
-                if (item.isDirectory) {
-                    const div = document.createElement('div');
-                    div.className = `item ${item.isDirectory ? 'folder' : 'file'}`;
-                    
-                    const link = document.createElement('a');
-                    link.href = `/${item.path}`;
-                    const icon = item.isDirectory ? '📁' : '📄';
-                    link.innerHTML = `${icon} ${item.name}`;
-                    
-                    div.appendChild(link);
-                    fileList.appendChild(div);
-                } else {
-                    const div = document.createElement('div');
-                    div.className = `item ${item.isDirectory ? 'folder' : 'file'}`;
-                    
-                    const link = document.createElement('a');
-                    link.href = `/${item.path}`;
-                    const icon = item.isDirectory ? '📁' : '📄';
-                    link.innerHTML = `${icon} ${item.name}`;
-                    
-                    div.appendChild(link);
+            // Get items from the already parsed data
+            renderItems(sortItems(currentItems, currentSort));
 
-                    const link2 = document.createElement('a');
-                    link2.href = `/${item.path}?json=true`;
-                    const icon2 = item.isDirectory ? '📁' : '📄';
-                    link2.innerHTML = `${icon} dovr-${item.name}`;
+            // Add click handlers for sort buttons
+            document.querySelectorAll('.sort-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    // Update active button
+                    document.querySelectorAll('.sort-button').forEach(b => b.classList.remove('active'));
+                    button.classList.add('active');
                     
-                    div.appendChild(link2);
-                    fileList.appendChild(div);
-                }
+                    // Sort and render
+                    currentSort = button.dataset.sort;
+                    renderItems(sortItems(currentItems, currentSort));
+                });
             });
         });
     </script>

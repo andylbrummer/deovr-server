@@ -27,9 +27,13 @@ async function getVideoMetadata(filePath) {
   }
 }
 
-function getAdjacentVideos(dirPath, currentFile) {
+function getAdjacentMedia(dirPath, currentFile) {
+  const videoExtensions = ['.mp4', '.m4v', '.webm'];
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+  const mediaExtensions = [...videoExtensions, ...imageExtensions];
+
   const files = fs.readdirSync(dirPath)
-    .filter(file => ['.mp4', '.m4v', '.webm'].includes(path.extname(file).toLowerCase()));
+    .filter(file => mediaExtensions.includes(path.extname(file).toLowerCase()));
 
   const currentIndex = files.indexOf(currentFile);
   return {
@@ -46,7 +50,7 @@ function isDeoVRBrowser(userAgent) {
 
 function isDeoVRPlayer(userAgent) {
   return userAgent && (
-    userAgent.toLowerCase().includes('avpromobilevideo') || 
+    userAgent.toLowerCase().includes('avpromobilevideo') ||
     userAgent.toLowerCase().includes('exoplayerlib')
   );
 }
@@ -87,7 +91,7 @@ async function handleStaticFiles(absolutePath, req, res, next) {
 
       const videoMetadata = await getVideoMetadata(fileFullPath);
       const dirPath = path.dirname(fileFullPath);
-      const { previous, next } = getAdjacentVideos(dirPath, path.basename(fileFullPath));
+      const { previous, next } = getAdjacentMedia(dirPath, path.basename(fileFullPath));
 
       const deovrResponse = {
         title: path.basename(fullPath, path.extname(fileFullPath)),
@@ -123,7 +127,7 @@ async function handleStaticFiles(absolutePath, req, res, next) {
       } else {
         res.sendFile(fullPath);
       }
-    } 
+    }
   } catch (error) {
     if (error.code === 'ENOENT') {
       return res.status(404).render('error', {
@@ -140,9 +144,41 @@ async function handleStaticFiles(absolutePath, req, res, next) {
   }
 }
 
+async function getFileDetails(filePath, absolutePath, requestedPath) {
+  try {
+    const fullPath = path.join(absolutePath, filePath);
+    const stats = fs.statSync(fullPath);
+    const isDirectory = stats.isDirectory();
+    let duration = null;
+
+    // Get video duration for video files
+    if (!isDirectory && ['.mp4', '.m4v', '.webm'].includes(path.extname(filePath).toLowerCase())) {
+      try {
+        const metadata = await getVideoMetadata(fullPath);
+        duration = metadata.duration;
+      } catch (err) {
+        console.error(`Error getting video metadata for ${filePath}:`, err);
+      }
+    }
+
+    return {
+      stats: {
+        size: stats.size,
+        mtime: stats.mtime
+      },
+      duration: duration
+    };
+  } catch (error) {
+    console.error(`Error getting file details for ${filePath}:`, error);
+    throw error;
+  }
+}
+
 module.exports = {
     handleStaticFiles,
     getVideoMetadata,
+    getAdjacentMedia,
     moveFileToRemove,
-    restoreFileFromRemove
+    restoreFileFromRemove,
+    getFileDetails
 };

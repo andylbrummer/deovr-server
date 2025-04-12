@@ -13,7 +13,7 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin: 10px;
-            padding: 15px;
+            padding: 0;
             display: inline-block;
             width: 250px;
             vertical-align: top;
@@ -23,12 +23,21 @@
             text-decoration: none;
             cursor: pointer;
             color: #2c3e50;
+            display: block;
+            padding: 15px;
+            border-radius: 8px;
         }
         .folder {
             background: #e3f2fd;
         }
+        .folder a:hover {
+            background: #c8e6fc;
+        }
         .file {
             background: white;
+        }
+        .file a:hover {
+            background: #f5f5f5;
         }
         .breadcrumb {
             margin-bottom: 20px;
@@ -82,6 +91,7 @@
             align-items: center;
             justify-content: center;
             background: transparent;
+            z-index: 10; /* Ensure button is above the anchor */
         }
         .restore-button {
             position: absolute;
@@ -97,16 +107,93 @@
             align-items: center;
             justify-content: center;
             background: transparent;
+            z-index: 10; /* Ensure button is above the anchor */
+        }
+        .cache-button {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            margin-left: 20px;
+            cursor: pointer;
+        }
+        .cache-button:hover {
+            background: #c0392b;
+        }
+        .cache-status {
+            margin-left: 10px;
+            font-size: 0.9em;
+            color: #7f8c8d;
+        }
+        .loading {
+            color: #7f8c8d;
+            font-style: italic;
+        }
+        .random-media-card {
+            background: linear-gradient(135deg, #3498db, #8e44ad);
+            color: white;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            margin: 5px;
+            padding: 10px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            max-width: 300px;
+        }
+        .random-media-card h3 {
+            margin-top: 0;
+            margin-bottom: 5px;
+            font-size: 1.1em;
+        }
+        .random-media-card-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 1em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .random-media-card-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+        }
+        .random-media-card-actions a {
+            text-decoration: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            transition: background-color 0.2s;
+            font-size: 0.9em;
+        }
+        .view-media-btn {
+            background-color: #27ae60;
+            color: white;
+        }
+        .view-media-btn:hover {
+            background-color: #2ecc71;
+        }
+        .skip-media-btn {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+        .skip-media-btn:hover {
+            background-color: rgba(255, 255, 255, 0.3);
         }
     </style>
 </head>
 <body>
-    <div><a href="https://deovr.com/deovr/video/id/52212">Japan stroll</a></div>
     <div class="breadcrumb" id="breadcrumb"></div>
+    <div id="randomMediaCard"></div>
     <div class="button-bar">
         <button class="sort-button active" data-sort="name">Sort by Name</button>
         <button class="sort-button" data-sort="size">Sort by Size</button>
         <button class="sort-button" data-sort="random">Random</button>
+        <button id="clearCacheBtn" class="cache-button">Clear Cache</button>
+        <span id="cacheStatus" class="cache-status"></span>
     </div>
     <%
     const itemsJson = JSON.stringify(items || []).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -117,17 +204,58 @@
         let currentPath = '<%- currentPath %>';
         let currentItems = JSON.parse(document.getElementById('fileList').dataset.items);
         let currentSort = 'name';
+        let fileDetailsCache = {};
+
+        // Cache keys
+        const FILE_LIST_CACHE_KEY = 'deovr_file_list_cache';
+        const FILE_DETAILS_CACHE_KEY = 'deovr_file_details_cache';
+        const SORT_PREFERENCE_KEY = 'deovr_sort_preference';
+
+        // Load cached sort preference
+        try {
+            const cachedSort = localStorage.getItem(SORT_PREFERENCE_KEY);
+            if (cachedSort) {
+                currentSort = cachedSort;
+            }
+        } catch (e) {
+            console.error('Error loading sort preference from cache:', e);
+        }
+
+        // Load cached file details
+        try {
+            const cachedDetails = localStorage.getItem(FILE_DETAILS_CACHE_KEY);
+            if (cachedDetails) {
+                fileDetailsCache = JSON.parse(cachedDetails);
+            }
+        } catch (e) {
+            console.error('Error loading file details from cache:', e);
+            fileDetailsCache = {};
+        }
+
+        // Try to load items from cache first
+        try {
+            const cachedData = localStorage.getItem(FILE_LIST_CACHE_KEY);
+            if (cachedData) {
+                const parsed = JSON.parse(cachedData);
+                if (parsed.path === currentPath && parsed.timestamp > Date.now() - 5 * 60 * 1000) { // 5 minute cache
+                    currentItems = parsed.items;
+                    document.getElementById('cacheStatus').textContent = 'Using cached data';
+                }
+            }
+        } catch (e) {
+            console.error('Error loading from cache:', e);
+        }
 
         function updateBreadcrumb() {
             const parts = currentPath.split('/').filter(p => p);
             let html = '<a href="/">Home</a>';
             let buildPath = '';
-            
+
             parts.forEach(part => {
                 buildPath += '/' + part;
                 html += ` > <a href="${buildPath}">${part}</a>`;
             });
-            
+
             document.getElementById('breadcrumb').innerHTML = html;
         }
 
@@ -150,7 +278,7 @@
         function sortItems(items, sortType) {
             const folderItems = items.filter(item => item.isDirectory);
             const fileItems = items.filter(item => !item.isDirectory);
-            
+
             switch(sortType) {
                 case 'size':
                     fileItems.sort((a, b) => (b.stats?.size || 0) - (a.stats?.size || 0));
@@ -164,7 +292,7 @@
                 default: // name
                     fileItems.sort((a, b) => a.name.localeCompare(b.name));
             }
-            
+
             // Folders always sorted by name at the top
             folderItems.sort((a, b) => a.name.localeCompare(b.name));
             return [...folderItems, ...fileItems];
@@ -174,12 +302,12 @@
             if (!confirm('Are you sure you want to move this file to the remove folder?')) {
                 return;
             }
-            
+
             try {
                 const response = await fetch(`/api/remove-file?path=${encodeURIComponent(filePath)}`, {
                     method: 'POST'
                 });
-                
+
                 if (response.ok) {
                     itemElement.remove();
                 } else {
@@ -195,12 +323,12 @@
             if (!confirm('Are you sure you want to restore this file to the parent folder?')) {
                 return;
             }
-            
+
             try {
                 const response = await fetch(`/api/restore-file?path=${encodeURIComponent(filePath)}`, {
                     method: 'POST'
                 });
-                
+
                 if (response.ok) {
                     itemElement.remove();
                 } else {
@@ -212,23 +340,255 @@
             }
         }
 
+        // Function to fetch file details
+        async function fetchFileDetails(filePath) {
+            // Check cache first
+            const cacheKey = filePath;
+            if (fileDetailsCache[cacheKey] && fileDetailsCache[cacheKey].timestamp > Date.now() - 60 * 60 * 1000) { // 1 hour cache
+                return fileDetailsCache[cacheKey].details;
+            }
+
+            try {
+                const response = await fetch(`/api/file-details?path=${encodeURIComponent(filePath)}`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch file details: ${response.statusText}`);
+                }
+
+                const details = await response.json();
+
+                // Save to cache
+                fileDetailsCache[cacheKey] = {
+                    timestamp: Date.now(),
+                    details: details
+                };
+
+                // Update localStorage cache
+                try {
+                    localStorage.setItem(FILE_DETAILS_CACHE_KEY, JSON.stringify(fileDetailsCache));
+                } catch (e) {
+                    console.error('Error saving file details to cache:', e);
+                    // If localStorage is full, clear it and try again
+                    if (e.name === 'QuotaExceededError') {
+                        localStorage.removeItem(FILE_DETAILS_CACHE_KEY);
+                        localStorage.setItem(FILE_DETAILS_CACHE_KEY, JSON.stringify({ [cacheKey]: fileDetailsCache[cacheKey] }));
+                    }
+                }
+
+                return details;
+            } catch (error) {
+                console.error(`Error fetching details for ${filePath}:`, error);
+                return null;
+            }
+        }
+
+        // Function to update metadata for a file item
+        async function updateFileMetadata(item, metadataDiv) {
+            if (item.isDirectory) return;
+
+            metadataDiv.innerHTML = '<span class="loading">Loading details...</span>';
+
+            const details = await fetchFileDetails(item.path);
+            if (!details) {
+                metadataDiv.innerHTML = `Size: ${formatFileSize(item.size)}<br>Failed to load details`;
+                return;
+            }
+
+            metadataDiv.innerHTML = `
+                Size: ${formatFileSize(details.stats.size)}<br>
+                Modified: ${new Date(details.stats.mtime).toLocaleDateString()}<br>
+                ${details.duration ? 'Duration: ' + formatDuration(details.duration) : ''}
+            `;
+        }
+
+        // Session storage keys
+        const PLAYED_MEDIA_KEY = 'deovr_played_media';
+        const LAST_VIEWED_MEDIA_KEY = 'deovr_last_viewed_media';
+        const AUTO_ADVANCE_KEY = 'deovr_auto_advance';
+
+        // Function to get media files (videos and images) from the current items
+        function getMediaFiles(items) {
+            // Filter for media files (videos and images)
+            return items.filter(item => {
+                if (item.isDirectory) return false;
+
+                const lowerName = item.name.toLowerCase();
+                // Check for video extensions
+                const isVideo = lowerName.endsWith('.mp4') || lowerName.endsWith('.m4v') || lowerName.endsWith('.webm');
+                // Check for image extensions
+                const isImage = lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') ||
+                               lowerName.endsWith('.png') || lowerName.endsWith('.gif') ||
+                               lowerName.endsWith('.webp');
+
+                return isVideo || isImage;
+            });
+        }
+
+        // Function to determine if a file is a video
+        function isVideoFile(filename) {
+            const lowerName = filename.toLowerCase();
+            return lowerName.endsWith('.mp4') || lowerName.endsWith('.m4v') || lowerName.endsWith('.webm');
+        }
+
+        // Function to get a random media file that hasn't been played yet
+        function getRandomMediaFile(items) {
+            // Get all media files
+            const mediaFiles = getMediaFiles(items);
+            console.log('Media files found:', mediaFiles.length);
+
+            // If no media files, return null
+            if (mediaFiles.length === 0) return null;
+
+            // Get played media from session storage
+            let playedMedia = [];
+            try {
+                const storedPlayedMedia = sessionStorage.getItem(PLAYED_MEDIA_KEY);
+                if (storedPlayedMedia) {
+                    playedMedia = JSON.parse(storedPlayedMedia);
+                }
+            } catch (e) {
+                console.error('Error loading played media from session storage:', e);
+                playedMedia = [];
+            }
+
+            // Filter out already played media
+            let availableMedia = mediaFiles.filter(media =>
+                !playedMedia.includes(media.path)
+            );
+
+            // If all media has been played, reset the played list
+            if (availableMedia.length === 0) {
+                console.log('All media has been played, resetting playlist');
+                sessionStorage.removeItem(PLAYED_MEDIA_KEY);
+                availableMedia = mediaFiles;
+            }
+
+            // Return a random media file from available options
+            const randomIndex = Math.floor(Math.random() * availableMedia.length);
+            const selectedMedia = availableMedia[randomIndex];
+
+            // Add to played media list
+            playedMedia.push(selectedMedia.path);
+            try {
+                sessionStorage.setItem(PLAYED_MEDIA_KEY, JSON.stringify(playedMedia));
+            } catch (e) {
+                console.error('Error saving played media to session storage:', e);
+            }
+
+            console.log(`Selected random media:`, selectedMedia);
+            return selectedMedia;
+        }
+
+        // Function to render the random media card
+        function renderRandomMediaCard(items) {
+            const cardContainer = document.getElementById('randomMediaCard');
+            cardContainer.innerHTML = '';
+
+            // Get a random media file
+            const randomMedia = getRandomMediaFile(items);
+
+            // If no media files, don't show the card
+            if (!randomMedia) return;
+
+            // Create the card
+            const card = document.createElement('div');
+            card.className = 'random-media-card';
+
+            // Determine if it's a video or image
+            const isVideo = isVideoFile(randomMedia.name);
+            const icon = isVideo ? '📺' : '🖼️';
+            const mediaType = isVideo ? 'Video' : 'Image';
+
+            // Add card content
+            card.innerHTML = `
+                <h3>Random ${mediaType}</h3>
+                <div class="random-media-card-title">${icon} ${randomMedia.name}</div>
+                <div class="random-media-card-actions">
+                    <a href="#" class="skip-media-btn" id="skipMediaBtn">Skip</a>
+                    <a href="/${randomMedia.path}" class="view-media-btn" id="viewMediaBtn">View ${mediaType}</a>
+                </div>
+            `;
+
+            // Add the card to the container
+            cardContainer.appendChild(card);
+
+            // Add event listener for skip button
+            document.getElementById('skipMediaBtn').addEventListener('click', (e) => {
+                e.preventDefault();
+                renderRandomMediaCard(items); // Re-render with a new random media
+            });
+
+            // Add event listener for view button to track when media is viewed
+            document.getElementById('viewMediaBtn').addEventListener('click', (e) => {
+                // Store the current media path to know it was viewed
+                sessionStorage.setItem(LAST_VIEWED_MEDIA_KEY, randomMedia.path);
+                // Set flag to auto-advance when returning to the page
+                sessionStorage.setItem(AUTO_ADVANCE_KEY, 'true');
+            });
+        }
+
         function renderItems(items) {
             const fileList = document.getElementById('fileList');
             fileList.innerHTML = '';
-            
+
+            // Save to cache
+            try {
+                localStorage.setItem(FILE_LIST_CACHE_KEY, JSON.stringify({
+                    path: currentPath,
+                    timestamp: Date.now(),
+                    items: items
+                }));
+                localStorage.setItem(SORT_PREFERENCE_KEY, currentSort);
+            } catch (e) {
+                console.error('Error saving to cache:', e);
+            }
+
+            // Render the random media card if we're in a directory
+            renderRandomMediaCard(items);
+
             items.forEach(item => {
                 const div = document.createElement('div');
                 div.className = `item ${item.isDirectory ? 'folder' : 'file'}`;
-                
+
                 const link = document.createElement('a');
                 link.href = `/${item.path}`;
                 const icon = item.isDirectory ? '📁' : '📄';
-                
+
+                // Create content container inside the link
+                const contentContainer = document.createElement('div');
+
+                // Add file name
                 const nameDiv = document.createElement('div');
                 nameDiv.className = 'file-name';
                 nameDiv.innerHTML = `${icon} ${item.name}`;
-                link.appendChild(nameDiv);
+                contentContainer.appendChild(nameDiv);
 
+                // Create metadata div for all non-directory items
+                if (!item.isDirectory) {
+                    const metadataDiv = document.createElement('div');
+                    metadataDiv.className = 'metadata';
+                    metadataDiv.innerHTML = `Size: ${formatFileSize(item.size)}<br>`;
+                    contentContainer.appendChild(metadataDiv);
+
+                    // Use Intersection Observer to lazy load file details
+                    const observer = new IntersectionObserver((entries) => {
+                        entries.forEach(entry => {
+                            if (entry.isIntersecting) {
+                                updateFileMetadata(item, metadataDiv);
+                                observer.disconnect(); // Only load once
+                            }
+                        });
+                    }, { rootMargin: '100px' }); // Start loading when within 100px of viewport
+
+                    observer.observe(div);
+                }
+
+                // Add the content container to the link
+                link.appendChild(contentContainer);
+
+                // Add the link to the div (this makes the entire card clickable)
+                div.appendChild(link);
+
+                // Add action buttons outside the link so they can be clicked separately
                 if (!item.isDirectory && item.actions && item.actions.length > 0) {
                     const action = item.actions[0];
                     const button = document.createElement('button');
@@ -252,27 +612,81 @@
                     div.appendChild(button);
                 }
 
-                if (!item.isDirectory && item.stats) {
-                    const metadataDiv = document.createElement('div');
-                    metadataDiv.className = 'metadata';
-                    metadataDiv.innerHTML = `
-                        Size: ${formatFileSize(item.stats.size)}<br>
-                        Modified: ${new Date(item.stats.mtime).toLocaleDateString()}<br>
-                        ${item.duration ? 'Duration: ' + formatDuration(item.duration) : ''}
-                    `;
-                    link.appendChild(metadataDiv);
-                }
-                
-                div.appendChild(link);
                 fileList.appendChild(div);
             });
         }
 
+        // Function to clear all caches
+        function clearAllCaches() {
+            try {
+                localStorage.removeItem(FILE_LIST_CACHE_KEY);
+                localStorage.removeItem(FILE_DETAILS_CACHE_KEY);
+                fileDetailsCache = {};
+                document.getElementById('cacheStatus').textContent = 'Cache cleared';
+                setTimeout(() => {
+                    document.getElementById('cacheStatus').textContent = '';
+                }, 3000);
+            } catch (e) {
+                console.error('Error clearing cache:', e);
+                document.getElementById('cacheStatus').textContent = 'Error clearing cache';
+            }
+        }
+
+        // Function to refresh data from server
+        async function refreshData() {
+            document.getElementById('cacheStatus').textContent = 'Refreshing data...';
+            try {
+                const response = await fetch(`/api/files?path=${encodeURIComponent(currentPath)}`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch files: ${response.statusText}`);
+                }
+
+                currentItems = await response.json();
+                renderItems(sortItems(currentItems, currentSort));
+                document.getElementById('cacheStatus').textContent = 'Data refreshed';
+                setTimeout(() => {
+                    document.getElementById('cacheStatus').textContent = '';
+                }, 3000);
+            } catch (error) {
+                console.error('Error refreshing data:', error);
+                document.getElementById('cacheStatus').textContent = 'Error refreshing data';
+            }
+        }
+
+        // Function to check if we should auto-advance to next media
+        function checkAutoAdvance() {
+            const shouldAutoAdvance = sessionStorage.getItem(AUTO_ADVANCE_KEY) === 'true';
+            const lastViewedMedia = sessionStorage.getItem(LAST_VIEWED_MEDIA_KEY);
+
+            if (shouldAutoAdvance && lastViewedMedia) {
+                // Clear the auto-advance flag
+                sessionStorage.removeItem(AUTO_ADVANCE_KEY);
+
+                // Render a new random media card
+                renderRandomMediaCard(currentItems);
+            }
+        }
+
+        // Listen for page visibility changes to detect when user returns from viewing media
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                checkAutoAdvance();
+            }
+        });
+
+        // Listen for popstate events (when user navigates with browser back/forward buttons)
+        window.addEventListener('popstate', () => {
+            checkAutoAdvance();
+        });
+
         window.addEventListener('load', () => {
             updateBreadcrumb();
-            
+
             // Get items from the already parsed data
             renderItems(sortItems(currentItems, currentSort));
+
+            // Check if we should auto-advance (returning from viewing media)
+            checkAutoAdvance();
 
             // Add click handlers for sort buttons
             document.querySelectorAll('.sort-button').forEach(button => {
@@ -280,11 +694,28 @@
                     // Update active button
                     document.querySelectorAll('.sort-button').forEach(b => b.classList.remove('active'));
                     button.classList.add('active');
-                    
+
                     // Sort and render
                     currentSort = button.dataset.sort;
                     renderItems(sortItems(currentItems, currentSort));
                 });
+            });
+
+            // Add click handler for clear cache button
+            document.getElementById('clearCacheBtn').addEventListener('click', () => {
+                if (confirm('Are you sure you want to clear the cache? This will refresh the page data.')) {
+                    clearAllCaches();
+                    refreshData();
+                }
+            });
+
+            // Set active sort button based on cached preference
+            document.querySelectorAll('.sort-button').forEach(button => {
+                if (button.dataset.sort === currentSort) {
+                    button.classList.add('active');
+                } else {
+                    button.classList.remove('active');
+                }
             });
         });
     </script>

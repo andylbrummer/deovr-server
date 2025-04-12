@@ -3,7 +3,7 @@
 const express = require('express');
 const path = require('path');
 const { program } = require('commander');
-const { getVideoMetadata, handleStaticFiles, moveFileToRemove, restoreFileFromRemove } = require('./fileHandler');
+const { getVideoMetadata, handleStaticFiles, moveFileToRemove, restoreFileFromRemove, getFileDetails } = require('./fileHandler');
 const favicon = require('serve-favicon');
 const fs = require('fs');
 
@@ -99,6 +99,7 @@ program
       });
     });
 
+    // API endpoint for getting file list with minimal data
     app.get('/api/files', (req, res) => {
       const requestedPath = req.query.path || '';
       const fullPath = path.join(absolutePath, requestedPath);
@@ -112,7 +113,7 @@ program
           const relativePath = path.join(requestedPath, item);
           // Check both current path and file path for remove folder
           const isInRemoveFolder = inRemoveFolder || relativePath.split(path.sep).includes('remove');
-          
+
           return {
             name: item,
             isDirectory: stats.isDirectory(),
@@ -124,19 +125,41 @@ program
             }]
           };
         });
+
+        // Add cache control headers
+        res.set('Cache-Control', 'public, max-age=60'); // Cache for 1 minute
         res.json(fileList);
       } catch (error) {
         res.status(500).json({ error: error.message });
       }
     });
 
+    // API endpoint for getting detailed file information
+    app.get('/api/file-details', async (req, res) => {
+      const filePath = req.query.path;
+      if (!filePath) {
+        return res.status(400).json({ error: 'No file path provided' });
+      }
+
+      try {
+        const details = await getFileDetails(filePath, absolutePath, req.query.path);
+
+        // Add cache control headers - cache file details longer since they rarely change
+        res.set('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+        res.json(details);
+      } catch (error) {
+        console.error('Error getting file details:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
     app.use(handleStaticFiles.bind(null, absolutePath));
-    
+
     app.get('/:path(*)', async (req, res) => {
       const requestedPath = req.params.path || '';
       const fullPath = path.join(absolutePath, requestedPath);
       const inRemoveFolder = requestedPath.split(path.sep).includes('remove');
-  
+
       try {
         const items = await Promise.all(fs.readdirSync(fullPath).map(async item => {
           const itemPath = path.join(fullPath, item);
@@ -172,14 +195,14 @@ program
             }]
           };
         }));
-    
+
         res.render('index', {
           items: items,
           currentPath: req.path
         });
       } catch (error) {
         res.status(500).render('error', {
-          title: 'server error', 
+          title: 'server error',
           error: error,
           message: 'An error occurred while processing your request'
          });

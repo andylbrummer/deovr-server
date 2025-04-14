@@ -616,13 +616,28 @@
             });
         }
 
-        // Function to clear all caches
-        function clearAllCaches() {
+        // Function to clear all caches (both client and server)
+        async function clearAllCaches() {
             try {
+                // Clear client-side caches
                 localStorage.removeItem(FILE_LIST_CACHE_KEY);
                 localStorage.removeItem(FILE_DETAILS_CACHE_KEY);
                 fileDetailsCache = {};
-                document.getElementById('cacheStatus').textContent = 'Cache cleared';
+
+                // Clear server-side caches
+                try {
+                    const response = await fetch('/api/clear-cache', {
+                        method: 'POST'
+                    });
+
+                    if (!response.ok) {
+                        console.error('Failed to clear server cache:', response.statusText);
+                    }
+                } catch (serverError) {
+                    console.error('Error clearing server cache:', serverError);
+                }
+
+                document.getElementById('cacheStatus').textContent = 'All caches cleared';
                 setTimeout(() => {
                     document.getElementById('cacheStatus').textContent = '';
                 }, 3000);

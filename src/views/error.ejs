@@ -1,32 +1,92 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Error</title>
+    <title><%= title %></title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            padding: 2rem;
-            max-width: 800px;
-            margin: 0 auto;
+            margin: 20px;
+            background-color: #f5f5f5;
         }
         .error-container {
-            background-color: #fff3f3;
-            border: 1px solid #ffcdd2;
-            border-radius: 4px;
-            padding: 1rem;
-            margin-top: 2rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin: 20px auto;
+            padding: 20px;
+            max-width: 800px;
         }
-        h1 {
-            color: #d32f2f;
+        .error-title {
+            color: #e74c3c;
+            margin-top: 0;
+        }
+        .error-message {
+            margin: 20px 0;
+            font-size: 1.1em;
+        }
+        .error-details {
+            background: #f8f8f8;
+            border-left: 4px solid #e74c3c;
+            padding: 10px;
+            margin: 20px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        .back-button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+            margin-right: 10px;
+        }
+        .back-button:hover {
+            background: #2980b9;
+        }
+        .timeout-info {
+            background: #f9f2cc;
+            border-left: 4px solid #f1c40f;
+            padding: 15px;
+            margin: 20px 0;
         }
     </style>
 </head>
 <body>
     <div class="error-container">
-        <h1><%= title %></h1>
-        <p><%= message %></p>
-        <p><%= error %></p>
-        <p><a href="/">Return to home</a></p>
+        <h1 class="error-title"><%= title %></h1>
+        <div class="error-message"><%= message %></div>
+
+        <% if (error && error.message && error.message.includes('Timeout')) { %>
+            <div class="timeout-info">
+                <h3>Why am I seeing this?</h3>
+                <p>This error occurs when the server takes too long to access files on your drive. This commonly happens when:</p>
+                <ul>
+                    <li>An external hard drive is in sleep mode and needs time to spin up</li>
+                    <li>You're accessing a network drive with slow response times</li>
+                    <li>The directory contains a very large number of files</li>
+                </ul>
+                <h3>What can I do?</h3>
+                <ul>
+                    <li>Try refreshing the page - the drive may have woken up by now</li>
+                    <li>Increase the timeout setting using the <code>--timeout</code> option or <code>DEOVR_FS_TIMEOUT</code> environment variable</li>
+                    <li>Consider organizing your files into smaller subdirectories</li>
+                </ul>
+            </div>
+        <% } %>
+
+        <% if (error && error.stack) { %>
+            <div class="error-details"><%= error.stack %></div>
+        <% } else if (error) { %>
+            <div class="error-details"><%= error %></div>
+        <% } %>
+
+        <a href="javascript:history.back()" class="back-button">Go Back</a>
+        <a href="/" class="back-button">Go Home</a>
     </div>
 </body>
 </html>

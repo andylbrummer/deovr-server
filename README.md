@@ -19,6 +19,7 @@ npm install -g deovr-server
 
 ## CLI Options
 - --port, -p: Set server port (default: 3000)
+- --timeout, -t: Set filesystem operation timeout in milliseconds (default: 10000)
 - Video directory path
 
 Serve a video directory on port 3000:
@@ -31,6 +32,11 @@ Serve the video directory /media/videos on port 8080:
 deovr-server -p 8080 /media/videos
 
 
+Serve a directory with a longer timeout (30 seconds) for slow drives:
+
+deovr-server -t 30000 /media/slow-drive/videos
+
+
 ## Environment Variables
 
 The following environment variables can be used to configure the server instead of CLI arguments:
@@ -39,6 +45,7 @@ The following environment variables can be used to configure the server instead 
 |----------|-------------|---------|
 | DEOVR_LIST_PORT | Server port | 3000 |
 | DEOVR_LIST_PATH | Video directory path | . |
+| DEOVR_FS_TIMEOUT | Filesystem operation timeout in milliseconds | 10000 |
 
 Environment variables take precedence over CLI arguments and config file settings. Example usage:
 
@@ -55,6 +62,22 @@ The server implements several caching mechanisms to improve performance:
 Cache is automatically invalidated when files are modified (moved to/from the remove folder).
 
 You can manually clear all caches by clicking the "Clear Cache" button in the UI or by making a POST request to `/api/clear-cache`.
+
+## Handling Slow or Sleeping Drives
+
+The server includes timeout handling for filesystem operations, which is particularly useful when working with:
+
+- External hard drives that may be in sleep mode
+- Network attached storage (NAS) with slow response times
+- Drives with very large directories containing many video files
+
+If a filesystem operation times out, the server will:
+
+1. Return a user-friendly error message
+2. Continue functioning for other requests
+3. Attempt to provide partial results when possible
+
+You can adjust the timeout duration using the `--timeout` command line option or the `DEOVR_FS_TIMEOUT` environment variable. The default timeout is 10 seconds (10000ms).
 
 ## API Endpoints
 

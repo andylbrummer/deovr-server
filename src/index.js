@@ -5,8 +5,10 @@ const path = require('path');
 const { program } = require('commander');
 const { getVideoMetadata, handleStaticFiles, moveFileToRemove, restoreFileFromRemove, getFileDetails } = require('./fileHandler');
 const favicon = require('serve-favicon');
-const fs = require('fs');
+const fs = require('fs').promises;
+const fsSync = require('fs');
 const Cache = require('./cache');
+const { promiseWithTimeout } = require('./utils');
 
 const app = express();
 
@@ -37,7 +39,11 @@ program
   .version('1.0.0')
   .argument('[directory]', 'Directory to serve')
   .option('-p, --port <number>', 'Port to run server on', process.env.DEOVR_LIST_PORT || '3000')
+  .option('-t, --timeout <number>', 'Timeout in milliseconds for filesystem operations', process.env.DEOVR_FS_TIMEOUT || '10000')
   .action(async (directory, options) => {
+    // Parse timeout option
+    const fsTimeoutMs = parseInt(options.timeout);
+    console.log(`Filesystem operation timeout set to ${fsTimeoutMs}ms`);
     const absolutePath = path.resolve(directory || process.env.DEOVR_LIST_PATH || '.');
     const initialPort = parseInt(options.port);
 
@@ -86,39 +92,36 @@ program
       }
     });
 
-    app.get('/deovr', (req, res) => {
-      console.log('Received request to /deovr');
-      res.json({
-        "scenes":[
-          {
-            "name":"Library",
-            "list":[
-              {
-                "title":"Play with a pretty dog",
-                "videoLength":79,
-                "thumbnailUrl":"https://deovr.com/s/images/feed/thumb1.png",
-                "video_url":"https://deovr.com/deovr/video/id/1"
-              },
-              {
-                "title":"Bikini car wash",
-                "videoLength":242,
-                "thumbnailUrl":"https://deovr.com/s/images/feed/thumb2.png",
-                "video_url":"https://deovr.com/deovr/video/id/2"
-              },
-              {
-                "title":"Date with a girl",
-                "videoLength":401,
-                "thumbnailUrl":"https:\/\/deovr.com\/s\/images\/feed\/thumb3.png",
-                "video_url":"https://deovr.com/deovr/video/id/2"
-              }
-            ]
-          }
-        ]
-      });
-    });
+    // app.get('/deovr', (req, res) => {
+    //   console.log('Received request to /deovr');
+    //   res.json({
+    //     "scenes":[
+    //       {
+    //         "name":"Library",
+    //         "list":[
+    //           {
+    //             "title":"Play with a pretty dog",
+    //             "videoLength":79,
+    //             "video_url":"https://deovr.com/deovr/video/id/1"
+    //           },
+    //           {
+    //             "title":"Bikini car wash",
+    //             "videoLength":242,
+    //             "video_url":"https://deovr.com/deovr/video/id/2"
+    //           },
+    //           {
+    //             "title":"Date with a girl",
+    //             "videoLength":401,
+    //             "video_url":"https://deovr.com/deovr/video/id/2"
+    //           }
+    //         ]
+    //       }
+    //     ]
+    //   });
+    // });
 
     // API endpoint for getting file list with minimal data
-    app.get('/api/files', (req, res) => {
+    app.get('/api/files', async (req, res) => {
       const requestedPath = req.query.path || '';
       const fullPath = path.join(absolutePath, requestedPath);
       const inRemoveFolder = requestedPath.split(path.sep).includes('remove');
@@ -134,13 +137,60 @@ program
       }
 
       try {
-        const items = fs.readdirSync(fullPath);
-        const fileList = items.map(item => {
+        // Use the safeFileOperation utility with timeout
+        const { safeFileOperation } = require('./utils');
+
+        // Read directory with timeout
+        let items;
+        try {
+          items = await safeFileOperation(
+            fs.readdir,
+            [fullPath],
+            fsTimeoutMs,
+            `Timeout reading directory: ${fullPath}`
+          );
+        } catch (err) {
+          if (err.isTimeout) {
+            console.error(`Timeout reading directory: ${fullPath}`);
+            return res.status(504).json({
+              error: 'Timeout reading directory. The drive may be sleeping or disconnected.',
+              path: requestedPath
+            });
+          }
+          throw err;
+        }
+
+        // Process each file with timeout
+        const fileListPromises = items.map(async item => {
           const itemPath = path.join(fullPath, item);
-          const stats = fs.statSync(itemPath);
           const relativePath = path.join(requestedPath, item);
           // Check both current path and file path for remove folder
           const isInRemoveFolder = inRemoveFolder || relativePath.split(path.sep).includes('remove');
+
+          let stats;
+          try {
+            // Get file stats with timeout
+            stats = await safeFileOperation(
+              fs.stat,
+              [itemPath],
+              fsTimeoutMs / 2, // Use shorter timeout for individual files
+              `Timeout getting stats for: ${itemPath}`
+            );
+          } catch (err) {
+            // If timeout or other error, return minimal info
+            console.error(`Error getting stats for ${itemPath}:`, err.message);
+            return {
+              name: item,
+              isDirectory: false, // Assume it's a file if we can't determine
+              size: 0,
+              path: path.join(requestedPath, encodeURIComponent(item)),
+              error: err.isTimeout ? 'timeout' : 'error',
+              actions: [{
+                type: isInRemoveFolder ? 'restore' : 'delete',
+                path: relativePath
+              }]
+            };
+          }
 
           return {
             name: item,
@@ -154,6 +204,33 @@ program
           };
         });
 
+        // Wait for all file stats to be processed, with overall timeout
+        let fileList;
+        try {
+          fileList = await promiseWithTimeout(
+            Promise.all(fileListPromises),
+            fsTimeoutMs * 2, // Double timeout for the whole batch
+            'Timeout processing file list'
+          );
+        } catch (err) {
+          console.error('Error processing file list:', err.message);
+          // Return partial results if available
+          fileList = await Promise.allSettled(fileListPromises)
+            .then(results => results
+              .filter(r => r.status === 'fulfilled')
+              .map(r => r.value)
+            );
+
+          if (fileList.length === 0) {
+            return res.status(504).json({
+              error: 'Timeout processing file list. The drive may be slow or disconnected.',
+              path: requestedPath
+            });
+          }
+          // Continue with partial results, but don't cache them
+          return res.json(fileList);
+        }
+
         // Store in cache
         fileListCache.set(cacheKey, fileList);
 
@@ -161,6 +238,7 @@ program
         res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
         res.json(fileList);
       } catch (error) {
+        console.error(`Error listing files in ${fullPath}:`, error);
         res.status(500).json({ error: error.message });
       }
     });
@@ -183,7 +261,7 @@ program
       }
 
       try {
-        const details = await getFileDetails(filePath, absolutePath, req.query.path);
+        const details = await getFileDetails(filePath, absolutePath, req.query.path, fsTimeoutMs);
 
         // Store in cache
         fileDetailsCache.set(cacheKey, details);
@@ -215,7 +293,8 @@ program
       res.json({ success: true, message: 'All caches cleared' });
     });
 
-    app.use(handleStaticFiles.bind(null, absolutePath));
+    // Pass the filesystem timeout to the handleStaticFiles middleware
+    app.use((req, res, next) => handleStaticFiles(absolutePath, req, res, next, fsTimeoutMs));
 
     app.get('/:path(*)', async (req, res) => {
       const requestedPath = req.params.path || '';
@@ -238,20 +317,78 @@ program
         let items = fileListCache.get(cacheKey);
 
         if (!items) {
-          // If not in cache, read from filesystem
-          items = await Promise.all(fs.readdirSync(fullPath).map(async item => {
+          // If not in cache, read from filesystem with timeout
+          const { safeFileOperation } = require('./utils');
+
+          // Read directory with timeout
+          let dirItems;
+          try {
+            dirItems = await safeFileOperation(
+              fs.readdir,
+              [fullPath],
+              fsTimeoutMs,
+              `Timeout reading directory: ${fullPath}`
+            );
+          } catch (err) {
+            if (err.isTimeout) {
+              console.error(`Timeout reading directory: ${fullPath}`);
+              return res.status(504).render('error', {
+                title: 'Timeout Error',
+                message: 'Timeout reading directory. The drive may be sleeping or disconnected.',
+                error: err
+              });
+            }
+            throw err;
+          }
+
+          // Process each file with timeout
+          const itemPromises = dirItems.map(async item => {
             const itemPath = path.join(fullPath, item);
-            const stats = fs.statSync(itemPath);
-            const isDirectory = stats.isDirectory();
             const relativePath = path.join(requestedPath, item);
             // Check both current path and file path for remove folder
             const isInRemoveFolder = inRemoveFolder || relativePath.split(path.sep).includes('remove');
+
+            let stats;
+            try {
+              // Get file stats with timeout
+              stats = await safeFileOperation(
+                fs.stat,
+                [itemPath],
+                fsTimeoutMs / 2, // Use shorter timeout for individual files
+                `Timeout getting stats for: ${itemPath}`
+              );
+            } catch (err) {
+              console.error(`Error getting stats for ${itemPath}:`, err.message);
+              // Return minimal info if we can't get stats
+              return {
+                name: item,
+                isDirectory: false, // Assume it's a file if we can't determine
+                stats: {
+                  size: 0,
+                  mtime: new Date()
+                },
+                duration: null,
+                path: path.join(requestedPath, encodeURIComponent(item)),
+                error: err.isTimeout ? 'timeout' : 'error',
+                actions: [{
+                  type: isInRemoveFolder ? 'restore' : 'delete',
+                  path: relativePath
+                }]
+              };
+            }
+
+            const isDirectory = stats.isDirectory();
             let duration = null;
 
             // Get video duration for video files
             if (!isDirectory && ['.mp4', '.m4v', '.webm'].includes(path.extname(item).toLowerCase())) {
               try {
-                const metadata = await getVideoMetadata(itemPath);
+                // Use timeout for metadata extraction too
+                const metadata = await promiseWithTimeout(
+                  getVideoMetadata(itemPath),
+                  fsTimeoutMs,
+                  `Timeout getting video metadata for: ${itemPath}`
+                );
                 duration = metadata.duration;
               } catch (err) {
                 console.error(`Error getting video metadata for ${item}:`, err);
@@ -272,10 +409,38 @@ program
                 path: relativePath
               }]
             };
-          }));
+          });
 
-          // Store the file list in cache
-          fileListCache.set(cacheKey, items);
+          // Wait for all file stats to be processed, with overall timeout
+          try {
+            items = await promiseWithTimeout(
+              Promise.all(itemPromises),
+              fsTimeoutMs * 2, // Double timeout for the whole batch
+              'Timeout processing file list'
+            );
+          } catch (err) {
+            console.error('Error processing file list:', err.message);
+            // Return partial results if available
+            items = await Promise.allSettled(itemPromises)
+              .then(results => results
+                .filter(r => r.status === 'fulfilled')
+                .map(r => r.value)
+              );
+
+            if (items.length === 0) {
+              return res.status(504).render('error', {
+                title: 'Timeout Error',
+                message: 'Timeout processing file list. The drive may be slow or disconnected.',
+                error: err
+              });
+            }
+            // Continue with partial results, but don't cache them
+          }
+
+          // Only store complete results in cache
+          if (items.length === dirItems.length) {
+            fileListCache.set(cacheKey, items);
+          }
         }
 
         // Render the page

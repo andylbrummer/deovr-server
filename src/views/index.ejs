@@ -351,10 +351,27 @@
             try {
                 const response = await fetch(`/api/file-details?path=${encodeURIComponent(filePath)}`);
                 if (!response.ok) {
+                    // Check if it's a timeout error
+                    if (response.status === 504) {
+                        return {
+                            stats: {
+                                size: 0,
+                                mtime: new Date()
+                            },
+                            duration: null,
+                            error: 'timeout'
+                        };
+                    }
                     throw new Error(`Failed to fetch file details: ${response.statusText}`);
                 }
 
                 const details = await response.json();
+
+                // If there was a timeout error on the server side
+                if (details.error === 'timeout') {
+                    console.warn(`Timeout getting details for ${filePath}`);
+                    return details;
+                }
 
                 // Save to cache
                 fileDetailsCache[cacheKey] = {
@@ -390,6 +407,15 @@
             const details = await fetchFileDetails(item.path);
             if (!details) {
                 metadataDiv.innerHTML = `Size: ${formatFileSize(item.size)}<br>Failed to load details`;
+                return;
+            }
+
+            // Handle timeout errors
+            if (details.error === 'timeout') {
+                metadataDiv.innerHTML = `
+                    Size: ${formatFileSize(item.size)}<br>
+                    <span style="color: #e67e22;">Timeout loading details</span>
+                `;
                 return;
             }
 
@@ -653,6 +679,15 @@
             try {
                 const response = await fetch(`/api/files?path=${encodeURIComponent(currentPath)}`);
                 if (!response.ok) {
+                    // Check if it's a timeout error
+                    if (response.status === 504) {
+                        const errorData = await response.json();
+                        document.getElementById('cacheStatus').textContent = errorData.error || 'Timeout error';
+                        setTimeout(() => {
+                            document.getElementById('cacheStatus').textContent = 'Try refreshing again';
+                        }, 5000);
+                        return;
+                    }
                     throw new Error(`Failed to fetch files: ${response.statusText}`);
                 }
 
